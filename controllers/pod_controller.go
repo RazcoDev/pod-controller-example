@@ -37,6 +37,69 @@ type PodReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+func constructServiceForPod(r *PodReconciler, pod *corev1.Pod) (*corev1.Service, error) {
+	name := fmt.Sprintf("%s-svc", pod.Name)
+	var servicePortArray []corev1.ServicePort
+	servicePortArray = append(servicePortArray, corev1.ServicePort{
+		Name: "asdf",
+		Port: 80,
+	})
+	service := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   pod.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: make(map[string]string),
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: servicePortArray,
+		},
+	}
+	for k, v := range pod.Labels {
+		service.Labels[k] = v
+	}
+
+	if err := ctrl.SetControllerReference(pod, service, r.Scheme); err != nil {
+		return nil, err
+	}
+	return service, nil
+
+}
+
+func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *corev1.Pod) (*v1.Route, error) {
+	name := fmt.Sprintf("%s-route", pod.Name)
+	routePort := &v1.RoutePort{TargetPort: intstr.IntOrString{
+		IntVal: service.Spec.Ports[0].Port,
+	}}
+
+	route := &v1.Route{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "route.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: pod.Namespace,
+			Labels:    make(map[string]string),
+		},
+		Spec: v1.RouteSpec{
+			To: v1.RouteTargetReference{
+				Name: service.Name,
+			},
+			Port: routePort,
+		},
+	}
+	for k, v := range service.Labels {
+		route.Labels[k] = v
+	}
+
+	if err := ctrl.SetControllerReference(service, route, r.Scheme); err != nil {
+		return nil, err
+	}
+	return route, nil
+
+}
+
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;update;patch
 func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
@@ -48,132 +111,81 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		log.Error(err, "unable to fetch Pod")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	var (
-		childServices corev1.ServiceList
-		childRoutes   v1.RouteList
-	)
-	if err := r.List(ctx, &childServices, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name}); err != nil {
-		log.Error(err, "Unable to list child services")
-		return ctrl.Result{}, err
-	}
-	if err := r.List(ctx, &childRoutes, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name + "-svc"}); err != nil {
-		log.Error(err, "Unable to list child Routes")
-		return ctrl.Result{}, err
-	}
-	constructServiceForPod := func(pod *corev1.Pod) (*corev1.Service, error) {
-		name := fmt.Sprintf("%s-svc", pod.Name)
-		var servicePortArray []corev1.ServicePort
-		servicePortArray = append(servicePortArray, corev1.ServicePort{
-			Name: "asdf",
-			Port: 80,
-		})
-		service := &corev1.Service{
-			TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        name,
-				Namespace:   pod.Namespace,
-				Labels:      make(map[string]string),
-				Annotations: make(map[string]string),
-			},
-			Spec: corev1.ServiceSpec{
-				Ports: servicePortArray,
-			},
-		}
-		for k, v := range pod.Labels {
-			service.Labels[k] = v
-		}
-
-		if err := ctrl.SetControllerReference(pod, service, r.Scheme); err != nil {
-			return nil, err
-		}
-		return service, nil
-
-	}
-	constructRouteForService := func(service *corev1.Service) (*v1.Route, error) {
-		name := fmt.Sprintf("%s-route", pod.Name)
-		routePort := &v1.RoutePort{TargetPort: intstr.IntOrString{
-			IntVal: service.Spec.Ports[0].Port,
-		}}
-
-		route := &v1.Route{
-			TypeMeta: metav1.TypeMeta{
-				Kind: "route.openshift.io/v1",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: pod.Namespace,
-				Labels:    make(map[string]string),
-			},
-			Spec: v1.RouteSpec{
-				To: v1.RouteTargetReference{
-					Name: service.Name,
-				},
-				Port: routePort,
-			},
-		}
-		for k, v := range service.Labels {
-			route.Labels[k] = v
-		}
-
-		if err := ctrl.SetControllerReference(service, route, r.Scheme); err != nil {
-			return nil, err
-		}
-		return route, nil
-
-	}
 
 	if pod.Labels["raz-controller"] == "true" {
-		serviceCreate := func(childServices *corev1.ServiceList, pod corev1.Pod) (*corev1.Service, error) {
-			if len(childServices.Items) != 0 {
-				log.Info(string(len(childServices.Items)))
-				return &childServices.Items[0], nil
-			} else {
-				service, err := constructServiceForPod(&pod)
+		if pod.Status.Phase == "Running" {
+			var (
+				childServices corev1.ServiceList
+				childRoutes   v1.RouteList
+			)
+			if err := r.List(ctx, &childServices, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name}); err != nil {
+				log.Error(err, "Unable to list child services")
+				return ctrl.Result{}, err
+			}
+
+			if len(childServices.Items) == 0 {
+				serviceCreate := func(childServices *corev1.ServiceList, pod corev1.Pod) (*corev1.Service, error) {
+					if len(childServices.Items) != 0 {
+						log.Info(string(len(childServices.Items)))
+						return &childServices.Items[0], nil
+					} else {
+						service, err := constructServiceForPod(r, &pod)
+						if err != nil {
+							log.Error(err, "Unable to construct Service for Pod : %s", pod.Name)
+							return nil, err
+						}
+
+						if err := r.Create(ctx, service); err != nil {
+							log.Error(err, "Unable to create Service for Pod", "service", service)
+							return nil, err
+						}
+						log.V(1).Info("Created Service for Pod", "service", service)
+						return service, err
+					}
+				}
+				_, err := serviceCreate(&childServices, pod)
 				if err != nil {
-					log.Error(err, "Unable to construct Service for Pod : %s", pod.Name)
-					return nil, err
+					log.Error(err, "Unable to create Service for Pod", "pod", pod)
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+
+			if err := r.List(ctx, &childRoutes, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name + "-svc"}); err != nil {
+				log.Error(err, "Unable to list child Routes")
+				return ctrl.Result{}, err
+			}
+
+			if len(childRoutes.Items) == 0 {
+				log.Info("asdfadsfadsfadfadfadsf")
+				routeCreate := func(childRoutes *v1.RouteList, service corev1.Service) (*v1.Route, error) {
+					if len(childRoutes.Items) != 0 {
+						log.Info(string(len(childRoutes.Items)))
+						return &childRoutes.Items[0], nil
+					} else {
+						route, err := constructRouteForService(r, &service, &pod)
+						if err != nil {
+							log.Error(err, "Unable to construct Route for Service : %s", service.Name)
+							return nil, err
+						}
+
+						if err := r.Create(ctx, route); err != nil {
+							log.Error(err, "Unable to create Route for Service", "route", route)
+							return nil, err
+						}
+						log.V(1).Info("Created Route for Service", "route", route)
+						return route, err
+					}
 				}
 
-				if err := r.Create(ctx, service); err != nil {
-					log.Error(err, "Unable to create Service for Pod", "service", service)
-					return nil, err
+				_, err := routeCreate(&childRoutes, childServices.Items[0])
+				if err != nil {
+					log.Error(err, "Unable to create Route for Service", "service", childServices.Items[0])
+					return ctrl.Result{}, err
 				}
-				log.V(1).Info("Created Service for Pod", "service", service)
-				return service, err
 			}
 		}
-		service, err := serviceCreate(&childServices, pod)
-		if err != nil {
-			log.Error(err, "Unable to create Service for Pod", "pod", pod)
-			return ctrl.Result{}, err
-		}
-		routeCreate := func(childRoutes *v1.RouteList, service corev1.Service) (*v1.Route, error) {
-			if len(childRoutes.Items) != 0 {
-				log.Info(string(len(childRoutes.Items)))
-				return &childRoutes.Items[0], nil
-			} else {
-				route, err := constructRouteForService(&service)
-				if err != nil {
-					log.Error(err, "Unable to construct Route for Service : %s", service.Name)
-					return nil, err
-				}
-
-				if err := r.Create(ctx, route); err != nil {
-					log.Error(err, "Unable to create Route for Service", "route", route)
-					return nil, err
-				}
-				log.V(1).Info("Created Route for Service", "route", route)
-				return route, err
-			}
-		}
-		_, err = routeCreate(&childRoutes, *service)
-		if err != nil {
-			log.Error(err, "Unable to create Route for Service", "service", service)
-			return ctrl.Result{}, err
-		}
-
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -220,8 +232,14 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
+	label := make(map[string]string)
+	label["raz-controller"] = "asdasd"
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Pod{}).
+		For(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: label,
+			},
+		}).
 		Owns(&corev1.Service{}).
 		Owns(&v1.Route{}).
 		Complete(r)
