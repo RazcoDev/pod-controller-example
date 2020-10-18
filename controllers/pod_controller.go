@@ -127,6 +127,8 @@ func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *co
 }
 
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=routes,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;update;patch
 func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	labelKey := os.Getenv("label_key")
@@ -195,7 +197,7 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 				routeCreate := func(childRoutes *v1.RouteList, service corev1.Service) (*v1.Route, error) {
 					if len(childRoutes.Items) != 0 {
-						log.Info(string(len(childRoutes.Items)))
+						//log.Info(string(len(childRoutes.Items)))
 						return &childRoutes.Items[0], nil
 					} else {
 						route, err := constructRouteForService(r, &service, &pod)
