@@ -36,42 +36,40 @@ import (
 // PodReconciler reconciles a Pod object
 type PodReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log      logr.Logger
+	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
-
 }
-
-/*
-Label : spark-role=driver
-Service:
-- name: driver-rpc-port
-  protocol: TCP
-  port: 7078
-  targetPort: 7078
-- name: blockmanager
-  protocol: TCP
-  port: 7079
-  targetPort:7079
-- name: webui
-  protocol: TCP
-  port: 4040
-  targetPort: 4040
-
-
-Route: name: <svc-name>-ingress
-	   hostname: <svc-name>-ingress.apps.xxx
-
-
- */
 
 func constructServiceForPod(r *PodReconciler, pod *corev1.Pod) (*corev1.Service, error) {
 	name := fmt.Sprintf("%s-svc", pod.Name)
 	var servicePortArray []corev1.ServicePort
-	servicePortArray = append(servicePortArray, corev1.ServicePort{
-		Name: "asdf",
-		Port: 80,
-	})
+	driverPort := corev1.ServicePort{
+		Name:     "driver-rpc-port",
+		Protocol: "TCP",
+		Port:     7078,
+		TargetPort: intstr.IntOrString{
+			IntVal: 7078,
+		},
+	}
+	blockmgrPort := corev1.ServicePort{
+		Name:     "blockmanager",
+		Protocol: "TCP",
+		Port:     7079,
+		TargetPort: intstr.IntOrString{
+			IntVal: 7079,
+		},
+	}
+	webuiPort := corev1.ServicePort{
+		Name:     "webui",
+		Protocol: "TCP",
+		Port:     4040,
+		TargetPort: intstr.IntOrString{
+			IntVal: 4040,
+		},
+	}
+
+	servicePortArray = append(servicePortArray, driverPort, blockmgrPort, webuiPort)
 	service := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -96,7 +94,7 @@ func constructServiceForPod(r *PodReconciler, pod *corev1.Pod) (*corev1.Service,
 }
 
 func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *corev1.Pod) (*v1.Route, error) {
-	name := fmt.Sprintf("%s-route", pod.Name)
+	name := fmt.Sprintf("%s-ingress", pod.Name)
 	routePort := &v1.RoutePort{TargetPort: intstr.IntOrString{
 		IntVal: service.Spec.Ports[0].Port,
 	}}
@@ -131,18 +129,25 @@ func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *co
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;update;patch
 func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	label_key := os.Getenv("label_key")
-	label_value := os.Getenv("label_value")
+	labelKey := os.Getenv("label_key")
+	if labelKey == "" {
+
+		return ctrl.Result{}, fmt.Errorf("label_key environment variable is missing")
+	}
+	labelValue := os.Getenv("label_value")
+	if labelValue == "" {
+		return ctrl.Result{}, fmt.Errorf("label_value environment variable is missing")
+	}
 
 	ctx := context.Background()
 	log := r.Log.WithValues("pod", req.NamespacedName)
 	var pod corev1.Pod
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
-		log.Error(err, "unable to fetch Pod")
+		log.Error(err, "Unable to fetch Pod")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if pod.Labels[label_key] == label_value{
+	if pod.Labels[labelKey] == labelValue {
 		if pod.Status.Phase == "Running" {
 			var (
 				childServices corev1.ServiceList
@@ -155,20 +160,20 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 			if len(childServices.Items) == 0 {
 				serviceCreate := func(childServices *corev1.ServiceList, pod corev1.Pod) (*corev1.Service, error) {
-						service, err := constructServiceForPod(r, &pod)
-						if err != nil {
-							log.Error(err, "Unable to construct Service for Pod : %s", pod.Name)
-							return nil, err
-						}
-
-						if err := r.Create(ctx, service); err != nil {
-							log.Error(err, "Unable to create Service for Pod", "service", service)
-							return nil, err
-						}
-						r.Recorder.Event(&pod, corev1.EventTypeNormal,"Created", "Service has been created - "+service.Name)
-						log.V(1).Info("Created Service for Pod", "service", service)
-						return service, err
+					service, err := constructServiceForPod(r, &pod)
+					if err != nil {
+						log.Error(err, "Unable to construct Service for Pod : %s", pod.Name)
+						return nil, err
 					}
+
+					if err := r.Create(ctx, service); err != nil {
+						log.Error(err, "Unable to create Service for Pod", "service", service)
+						return nil, err
+					}
+					r.Recorder.Event(&pod, corev1.EventTypeNormal, "Created", "Service has been created - "+service.Name)
+					log.V(1).Info("Created Service for Pod", "service", service)
+					return service, err
+				}
 
 				_, err := serviceCreate(&childServices, pod)
 				if err != nil {
@@ -178,7 +183,7 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 				return ctrl.Result{}, nil
 			}
 
-			if err := r.List(ctx, &childRoutes, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name }); err != nil {
+			if err := r.List(ctx, &childRoutes, client.InNamespace(req.Namespace), client.MatchingFields{jobOwnerKey: req.Name}); err != nil {
 				log.Error(err, "Unable to list child Routes")
 				return ctrl.Result{}, err
 			}
@@ -187,7 +192,6 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 				log.Info(lenS.Name)
 			}
 			if len(childRoutes.Items) == 0 {
-
 
 				routeCreate := func(childRoutes *v1.RouteList, service corev1.Service) (*v1.Route, error) {
 					if len(childRoutes.Items) != 0 {
@@ -204,7 +208,7 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 							log.Error(err, "Unable to create Route for Service", "route", route)
 							return nil, err
 						}
-						r.Recorder.Event(&pod, corev1.EventTypeNormal,"Created", "Route has been created - "+route.Name)
+						r.Recorder.Event(&pod, corev1.EventTypeNormal, "Created", "Route has been created - "+route.Name)
 						log.V(1).Info("Created Route for Service", "route", route)
 						return route, err
 					}
@@ -225,7 +229,6 @@ var (
 	jobOwnerKey = ".metadata.controller"
 	apiGVStr    = corev1.SchemeGroupVersion.String()
 )
-
 
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
@@ -256,7 +259,7 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return nil
 		}
 
-		if owner.APIVersion != apiGVStr || owner.Kind != "Pod"  {
+		if owner.APIVersion != apiGVStr || owner.Kind != "Pod" {
 			return nil
 		}
 
@@ -266,11 +269,9 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.Recorder = mgr.GetEventRecorderFor("Raz-Controller")
 
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		Owns(&corev1.Service{}).
 		Owns(&v1.Route{}).
 		Complete(r)
 }
-
