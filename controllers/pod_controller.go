@@ -93,8 +93,9 @@ func constructServiceForPod(r *PodReconciler, pod *corev1.Pod) (*corev1.Service,
 
 }
 
-func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *corev1.Pod) (*v1.Route, error) {
+func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *corev1.Pod, clusterName string) (*v1.Route, error) {
 	name := fmt.Sprintf("%s-ingress", pod.Name)
+	hostname := fmt.Sprintf("%s-ingress.%s", pod.Name, clusterName)
 	routePort := &v1.RoutePort{TargetPort: intstr.IntOrString{
 		IntVal: service.Spec.Ports[0].Port,
 	}}
@@ -109,6 +110,7 @@ func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *co
 			Labels:    make(map[string]string),
 		},
 		Spec: v1.RouteSpec{
+			Host: hostname,
 			To: v1.RouteTargetReference{
 				Name: service.Name,
 			},
@@ -139,6 +141,11 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	labelValue := os.Getenv("label_value")
 	if labelValue == "" {
 		return ctrl.Result{}, fmt.Errorf("label_value environment variable is missing")
+	}
+
+	clusterName := os.Getenv("cluster_name")
+	if clusterName == "" {
+		return ctrl.Result{}, fmt.Errorf("cluster_name environment variable is missing")
 	}
 
 	ctx := context.Background()
@@ -200,7 +207,7 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 						//log.Info(string(len(childRoutes.Items)))
 						return &childRoutes.Items[0], nil
 					} else {
-						route, err := constructRouteForService(r, &service, &pod)
+						route, err := constructRouteForService(r, &service, &pod, clusterName)
 						if err != nil {
 							log.Error(err, "Unable to construct Route for Service : %s", service.Name)
 							return nil, err
