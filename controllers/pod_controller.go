@@ -142,7 +142,6 @@ func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if labelValue == "" {
 		return ctrl.Result{}, fmt.Errorf("label_value environment variable is missing")
 	}
-
 	clusterName := os.Getenv("cluster_name")
 	if clusterName == "" {
 		return ctrl.Result{}, fmt.Errorf("cluster_name environment variable is missing")
