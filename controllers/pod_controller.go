@@ -96,8 +96,13 @@ func constructServiceForPod(r *PodReconciler, pod *corev1.Pod) (*corev1.Service,
 func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *corev1.Pod, clusterName string) (*v1.Route, error) {
 	name := fmt.Sprintf("%s-ingress", pod.Name)
 	hostname := fmt.Sprintf("%s-ingress.%s", pod.Name, clusterName)
+	servicePort, err := getServicePortByPortName(service.Spec.Ports, "webui")
+	if err != nil {
+		return nil, err
+	}
+
 	routePort := &v1.RoutePort{TargetPort: intstr.IntOrString{
-		IntVal: service.Spec.Ports[0].Port,
+		IntVal: servicePort.Port,
 	}}
 
 	route := &v1.Route{
@@ -126,6 +131,18 @@ func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *co
 	}
 	return route, nil
 
+}
+
+func getServicePortByPortName(servicePortArray []corev1.ServicePort, servicePortName string) (corev1.ServicePort, error) {
+	if servicePortName == "" {
+		return corev1.ServicePort{}, fmt.Errorf("empty service port name")
+	}
+	for _, value := range servicePortArray {
+		if value.Name == servicePortName {
+			return value, nil
+		}
+	}
+	return corev1.ServicePort{}, fmt.Errorf("no service port found")
 }
 
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
