@@ -152,7 +152,6 @@ func getServicePortByPortName(servicePortArray []corev1.ServicePort, servicePort
 func (r *PodReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	labelKey := os.Getenv("label_key")
 	if labelKey == "" {
-
 		return ctrl.Result{}, fmt.Errorf("label_key environment variable is missing")
 	}
 	labelValue := os.Getenv("label_value")
