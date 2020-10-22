@@ -72,7 +72,6 @@ var _ = BeforeSuite(func(done Done) {
 	// +kubebuilder:scaffold:scheme
 
 	Expect(err).ToNot(HaveOccurred())
-	Expect(k8sClient).ToNot(BeNil())
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
