@@ -26,8 +26,8 @@ var _ = Describe("CronJob controller", func() {
 			ctx := context.Background()
 			sparkPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "",
-					Namespace: "",
+					Name:      "test-pod",
+					Namespace: "spark-controller-tests",
 					Labels:    nil,
 				},
 				Spec: corev1.PodSpec{
