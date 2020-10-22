@@ -4,6 +4,7 @@ import (
 	"context"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,6 +55,7 @@ var _ = Describe("CronJob controller", func() {
 				}
 				return true
 			}, timeout, interval).Should(BeTrue())
+			log.Info("%s", createdService.Kind)
 			// Let's make sure our Schedule string value was properly converted/handled.
 			Expect(createdService.Kind).Should(Equal("Service"))
 		})
