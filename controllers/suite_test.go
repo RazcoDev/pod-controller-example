@@ -67,9 +67,10 @@ var _ = BeforeSuite(func(done Done) {
 	err = corev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = v1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).ToNot(HaveOccurred())
 	Expect(k8sClient).ToNot(BeNil())
 
@@ -77,8 +78,6 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
-	if err := v1.AddToScheme(k8sManager.GetScheme()); err != nil {
-	}
 	err = (&PodReconciler{
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("Pod"),
@@ -91,6 +90,7 @@ var _ = BeforeSuite(func(done Done) {
 	}()
 
 	k8sClient = k8sManager.GetClient()
+
 	Expect(k8sClient).ToNot(BeNil())
 
 	close(done)
