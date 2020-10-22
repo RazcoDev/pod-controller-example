@@ -23,7 +23,9 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	v1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,7 +77,8 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
-
+	if err := v1.AddToScheme(k8sManager.GetScheme()); err != nil {
+	}
 	err = (&PodReconciler{
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("Pod"),
