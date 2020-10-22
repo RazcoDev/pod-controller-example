@@ -107,7 +107,8 @@ func constructRouteForService(r *PodReconciler, service *corev1.Service, pod *co
 
 	route := &v1.Route{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "route.openshift.io/v1",
+			APIVersion: "route.openshift.io/v1",
+			Kind:       "Route",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

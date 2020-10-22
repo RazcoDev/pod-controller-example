@@ -77,8 +77,7 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
-	if err := v1.AddToScheme(k8sManager.GetScheme()); err != nil {
-	}
+
 	err = (&PodReconciler{
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("Pod"),
