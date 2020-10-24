@@ -7,6 +7,7 @@ import (
 	v1 "github.com/openshift/api/route/v1"
 	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"time"
@@ -77,30 +78,42 @@ var _ = Describe("Pod controller", func() {
 		})
 	})
 
-	//Context("When deleting a running Pod with proper label", func() {
-	//	It("Should delete the Service and the Route owned by the Pod", func() {
-	//		By("By deleting the Pod")
-	//		ctx := context.Background()
-	//		pod := &corev1.Pod{}
-	//		//service := &corev1.Service{}
-	//		//route := &v1.Route{}
-	//		namespaceName := types.NamespacedName{
-	//			Namespace: PodNamespace,
-	//			Name:      PodName,
-	//		}
-	//		Expect(k8sClient.Get(ctx, namespaceName , pod)).Should(Succeed())
-	//		//Expect(k8sClient.Delete(ctx, pod))
-	//		Eventually(func() bool {
-	//			//err := k8sClient.Get(ctx, namespaceName, service)
-	//			//if err != nil {
-	//			//	log.Error(err)
-	//			//	return false
-	//			//}
-	//
-	//			return true
-	//		}, timeout, interval).Should(BeTrue())
-	//
-	//
-	//	})
-	//})
+	Context("When deleting a running Pod with proper label", func() {
+		It("Should delete the Service and the Route owned by the Pod", func() {
+			By("By deleting the Pod")
+			ctx := context.Background()
+			pod := &corev1.Pod{}
+			service := &corev1.Service{}
+			route := &v1.Route{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: PodNamespace,
+				Name:      PodName,
+			}, pod)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, pod)).Should(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: PodNamespace,
+					Name:      serviceName,
+				}, service)
+				if errors.IsNotFound(err) {
+					return true
+				}
+
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: PodNamespace,
+					Name:      routeName,
+				}, route)
+				if errors.IsNotFound(err) {
+					return true
+				}
+
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+		})
+	})
 })
