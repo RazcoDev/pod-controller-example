@@ -41,6 +41,7 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+var k8sManager ctrl.Manager
 var testEnv *envtest.Environment
 
 func TestAPIs(t *testing.T) {
@@ -66,6 +67,7 @@ var _ = BeforeSuite(func(done Done) {
 
 	err = corev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	// +kubebuilder:scaffold:scheme
 
 	err = v1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -81,6 +83,7 @@ var _ = BeforeSuite(func(done Done) {
 	err = (&PodReconciler{
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("Pod"),
+		Scheme: scheme.Scheme,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
